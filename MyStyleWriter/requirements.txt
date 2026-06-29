@@ -1,0 +1,47 @@
+# ==============================================================================
+# SCRIPT 4 — Requirements (requirements.txt)
+# Project #27: MyStyle Writer — Style Fine-Tuning
+# ==============================================================================
+# Install all dependencies with:
+#   pip install -r requirements.txt
+#
+# For Google Colab, most of these are pre-installed. You only need:
+#   !pip install peft trl bitsandbytes accelerate gradio evaluate nltk
+# ==============================================================================
+
+# --- Core ML Framework ---
+torch>=2.1.0
+torchvision>=0.16.0
+
+# --- HuggingFace Ecosystem ---
+transformers>=4.36.0
+datasets>=2.16.0
+accelerate>=0.25.0
+tokenizers>=0.15.0
+
+# --- LoRA / PEFT ---
+peft>=0.7.0
+
+# --- Training (SFTTrainer) ---
+trl>=0.7.4
+
+# --- Quantization (4-bit loading on GPU) ---
+bitsandbytes>=0.41.0
+
+# --- Evaluation Metrics ---
+evaluate>=0.4.1
+nltk>=3.8.1
+
+# --- Web UI ---
+gradio>=4.12.0
+
+# --- Visualization ---
+matplotlib>=3.8.0
+numpy>=1.24.0
+
+# --- Scientific Computing ---
+scipy>=1.11.0
+
+# --- Utilities ---
+sentencepiece>=0.1.99
+protobuf>=3.20.0
