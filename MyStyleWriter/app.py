@@ -107,11 +107,12 @@ DEMO_RESPONSES_FT = {
 # GLOBAL MODEL VARIABLES (loaded once at startup)
 # ============================================================================
 
-base_model = None
-ft_model = None
+shared_model = None       # Single model instance (saves VRAM)
+shared_model_merged = False  # Whether adapter is currently merged
 tokenizer = None
 device = None
 models_loaded = False
+has_adapter = False       # Whether a LoRA adapter was loaded
 
 
 # ============================================================================
@@ -174,8 +175,12 @@ def validate_local_model(model_path: str) -> bool:
 
 
 def load_models():
-    """Load both base and fine-tuned models at startup with progress messages."""
-    global base_model, ft_model, tokenizer, device, models_loaded
+    """
+    Load a SINGLE model instance and optionally attach the LoRA adapter.
+    Uses merge/unmerge to switch between base and fine-tuned modes
+    without needing two copies in VRAM (critical for 4 GB RTX 2050).
+    """
+    global shared_model, shared_model_merged, tokenizer, device, models_loaded, has_adapter
 
     if models_loaded:
         return True
@@ -185,7 +190,7 @@ def load_models():
         return True
 
     print("=" * 60)
-    print("Loading models from LOCAL cache (no downloads)...")
+    print("Loading model from LOCAL cache (no downloads)...")
     print("=" * 60)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"  Device: {device}")
@@ -193,7 +198,7 @@ def load_models():
 
     # --- Validate local model exists before attempting to load ---
     if not validate_local_model(MODEL_NAME):
-        print("\n❌ Cannot proceed without the local model. Exiting.")
+        print("\n[ERROR] Cannot proceed without the local model. Exiting.")
         sys.exit(1)
 
     # --- Load Tokenizer (local only, no downloads) ---
@@ -221,9 +226,9 @@ def load_models():
             bnb_4bit_use_double_quant=True,
         )
 
-    # --- Load Base Model (local only, no downloads) ---
+    # --- Load ONE model (local only, no downloads) ---
     try:
-        base_model = AutoModelForCausalLM.from_pretrained(
+        shared_model = AutoModelForCausalLM.from_pretrained(
             MODEL_NAME,
             quantization_config=quant_config,
             device_map="auto" if device == "cuda" else None,
@@ -231,59 +236,81 @@ def load_models():
             local_files_only=True,
             torch_dtype=torch.float16 if device == "cuda" else torch.float32,
         )
-        base_model.eval()
+        shared_model.eval()
         print("  [OK] Base model loaded (local)")
     except Exception as e:
         print(f"  [X] Base model error: {e}")
         print("      The local model files may be incomplete or corrupted.")
         return False
 
-    # --- Load Fine-tuned Model with LoRA adapter ---
+    # --- Attach LoRA adapter (does NOT double VRAM usage) ---
     if os.path.exists(ADAPTER_DIR):
         try:
-            ft_base = AutoModelForCausalLM.from_pretrained(
-                MODEL_NAME,
-                quantization_config=quant_config,
-                device_map="auto" if device == "cuda" else None,
-                trust_remote_code=True,
-                local_files_only=True,
-                torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+            shared_model = PeftModel.from_pretrained(
+                shared_model, ADAPTER_DIR, local_files_only=True
             )
-            ft_model = PeftModel.from_pretrained(ft_base, ADAPTER_DIR, local_files_only=True)
-            ft_model.eval()
-            print("  [OK] Fine-tuned model loaded (LoRA adapter merged, local)")
+            shared_model.eval()
+            has_adapter = True
+            shared_model_merged = False
+            print("  [OK] LoRA adapter attached (merge/unmerge mode)")
+            print("  [OK] Single-model mode: adapter toggled for base vs FT comparison")
         except Exception as e:
-            print(f"  [X] Fine-tuned model error: {e}")
-            ft_model = None
+            print(f"  [X] Adapter error: {e}")
+            has_adapter = False
     else:
         print(f"  [!] Adapter not found at {ADAPTER_DIR}")
         print(f"    Run train.py first to create the adapter.")
-        ft_model = None
+        has_adapter = False
 
     models_loaded = True
-    print("  [OK] All models ready (fully offline)!\n")
+    print("  [OK] Model ready (fully offline)!\n")
     return True
+
+
+def _set_adapter_mode(merged: bool):
+    """
+    Switch the shared model between merged (fine-tuned) and unmerged (base) mode.
+    This avoids loading two separate model copies.
+    """
+    global shared_model_merged
+    if not has_adapter:
+        return
+    if merged and not shared_model_merged:
+        shared_model.merge_adapter()
+        shared_model_merged = True
+    elif not merged and shared_model_merged:
+        shared_model.unmerge_adapter()
+        shared_model_merged = False
 
 
 # ============================================================================
 # TEXT GENERATION
 # ============================================================================
 
-def generate(model, prompt: str, is_base: bool = True) -> str:
-    """Generate text continuation from a prompt using the given model."""
+def generate(prompt: str, is_base: bool = True) -> str:
+    """Generate text using the shared model (adapter merged or unmerged)."""
     if DEMO_MODE:
         responses = DEMO_RESPONSES_BASE["default"] if is_base else DEMO_RESPONSES_FT["default"]
         return random.choice(responses)
-        
-    if model is None:
-        return "[Model not loaded — run train.py first]"
+
+    if shared_model is None:
+        return "[Model not loaded -- run train.py first]"
+
+    # Toggle adapter: unmerge for base, merge for fine-tuned
+    if is_base:
+        _set_adapter_mode(merged=False)
+    else:
+        if not has_adapter:
+            return "[No adapter found -- run train.py first]"
+        _set_adapter_mode(merged=True)
+
     try:
         inputs = tokenizer(prompt, return_tensors="pt", padding=True, truncation=True)
-        input_ids = inputs["input_ids"].to(model.device)
-        attention_mask = inputs["attention_mask"].to(model.device)
+        input_ids = inputs["input_ids"].to(shared_model.device)
+        attention_mask = inputs["attention_mask"].to(shared_model.device)
 
         with torch.no_grad():
-            output_ids = model.generate(
+            output_ids = shared_model.generate(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 max_new_tokens=MAX_NEW_TOKENS,
@@ -304,18 +331,27 @@ def generate(model, prompt: str, is_base: bool = True) -> str:
 # METRICS CALCULATION
 # ============================================================================
 
-def calc_perplexity(model, text: str, is_base: bool = True) -> float:
+def calc_perplexity(text: str, is_base: bool = True) -> float:
     """Calculate perplexity — lower means more confident/fluent."""
     if DEMO_MODE:
         return random.uniform(40.0, 50.0) if is_base else random.uniform(25.0, 35.0)
-        
-    if model is None:
+
+    if shared_model is None:
         return float("nan")
+
+    # Toggle adapter mode
+    if is_base:
+        _set_adapter_mode(merged=False)
+    else:
+        if not has_adapter:
+            return float("nan")
+        _set_adapter_mode(merged=True)
+
     try:
         inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
-        input_ids = inputs["input_ids"].to(model.device)
+        input_ids = inputs["input_ids"].to(shared_model.device)
         with torch.no_grad():
-            outputs = model(input_ids=input_ids, labels=input_ids)
+            outputs = shared_model(input_ids=input_ids, labels=input_ids)
         return min(math.exp(outputs.loss.item()), 10000.0)
     except Exception:
         return float("nan")
@@ -433,13 +469,13 @@ def process_prompt(prompt: str):
     # Ensure models are loaded
     load_models()
 
-    # --- Generate outputs from both models ---
-    base_output = generate(base_model, prompt, is_base=True)
-    ft_output = generate(ft_model, prompt, is_base=False)
+    # --- Generate outputs from both models (using adapter merge/unmerge) ---
+    base_output = generate(prompt, is_base=True)
+    ft_output = generate(prompt, is_base=False)
 
     # --- Calculate all 4 metrics for both models ---
-    base_ppl = calc_perplexity(base_model, prompt + " " + base_output, is_base=True)
-    ft_ppl = calc_perplexity(ft_model, prompt + " " + ft_output, is_base=False) if (ft_model or DEMO_MODE) else float("nan")
+    base_ppl = calc_perplexity(prompt + " " + base_output, is_base=True)
+    ft_ppl = calc_perplexity(prompt + " " + ft_output, is_base=False) if (has_adapter or DEMO_MODE) else float("nan")
 
     base_bleu = calc_bleu(base_output, prompt)
     ft_bleu = calc_bleu(ft_output, prompt)
@@ -576,16 +612,19 @@ def create_ui():
     }
     """
 
+    app_theme = gr.themes.Base(
+        primary_hue=gr.themes.colors.teal,
+        secondary_hue=gr.themes.colors.blue,
+        neutral_hue=gr.themes.colors.gray,
+        font=gr.themes.GoogleFont("Inter"),
+    )
+
     with gr.Blocks(
-        theme=gr.themes.Base(
-            primary_hue=gr.themes.colors.teal,
-            secondary_hue=gr.themes.colors.blue,
-            neutral_hue=gr.themes.colors.gray,
-            font=gr.themes.GoogleFont("Inter"),
-        ),
-        css=custom_css,
-        title="MyStyle Writer — AI Style Fine-Tuning",
+        title="MyStyle Writer -- AI Style Fine-Tuning",
     ) as app:
+        # Store theme/css for launch()
+        app._custom_theme = app_theme
+        app._custom_css = custom_css
 
         # ---- HEADER ----
         gr.HTML("""
@@ -674,8 +713,7 @@ def create_ui():
         # ---- LOSS CURVE DISPLAY ----
         gr.Markdown("### 📈 Training Loss Curve")
         if os.path.exists(LOSS_CURVE_PATH):
-            gr.Image(value=LOSS_CURVE_PATH, label="Loss Curve (from best_adapter/)",
-                     show_download_button=False)
+            gr.Image(value=LOSS_CURVE_PATH, label="Loss Curve (from best_adapter/)")
         else:
             gr.Markdown("*Loss curve will appear here after running train.py*")
 
@@ -751,9 +789,15 @@ if __name__ == "__main__":
 
     # Create and launch the Gradio app
     app = create_ui()
-    app.launch(
+    # Gradio 6: theme and css are now passed to launch()
+    launch_kwargs = dict(
         server_name="0.0.0.0",
         server_port=7860,
         share=False,
         show_error=True,
     )
+    if hasattr(app, '_custom_theme'):
+        launch_kwargs['theme'] = app._custom_theme
+    if hasattr(app, '_custom_css'):
+        launch_kwargs['css'] = app._custom_css
+    app.launch(**launch_kwargs)
