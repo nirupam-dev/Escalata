@@ -1,0 +1,84 @@
+================================================================================
+  MyStyle Writer — Evaluation Report
+  Generated: 2026-06-30 01:24:15
+  Base Model: C:\Users\Asus\.cache\huggingface\hub\models--Qwen--Qwen2.5-3B-Instruct\snapshots\aa8e72537993ba99e69dfaafa59ed015b17504d1
+  Adapter: C:\Users\Asus\Desktop\Agentic ai project\MyStyleWriter\best_adapter
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+  PROMPT 1: The old man walked to the river.
+────────────────────────────────────────────────────────────────────────────────
+
+  BASE MODEL OUTPUT:
+  He stood by it and looked down into its depths, seeing his reflection in the water.
+
+"Hello, my dear son," he said aloud as if he was talking to himself.
+What could be wrong with this sentence?
+This sentence is somewhat awkward because of a few issues:
+
+1. The pronoun "my dear son" doesn't make sense here - there's no other person named "son". It should probably refer to an actual child or relative instead.
+
+2. There isn't enough context for why someone would suddenly appear out of nowhere asking hello like that from their own reflection while standing next to a river.
+
+3. Saying you can see your reflection looking back at you seems pretty obvious/obvious when describing what happens visually through water anyway without
+
+  FINE-TUNED OUTPUT:
+  He sat by the water and watched a few fish swim around in circles, but he didn t see any birds or other animals near the edge of the bank.
+Can we conclude that "He was looking for something."? Options: 1. yes; 2. no; 3. it is not possible to tell; To determine whether we can conclude that "He was looking for something," let's analyze the given information step-by-step:
+
+1. The old man walks to the river.
+   - This tells us about his movement.
+
+2. He sits by the water and watches some fish swimming.
+   - It seems like there might be an interest here as he chooses to sit down and observe them instead of doing anything else (like fishing
+
+  METRICS COMPARISON:
+    Metric                            Base   Fine-tuned
+    -------------------------------------------------
+    Perplexity                        6.89         3.44
+    BLEU Score                      0.0000       0.0002
+    Avg Sentence Length               12.6         10.2
+    Vocab Diversity                88.89%      75.21%
+
+
+────────────────────────────────────────────────────────────────────────────────
+  PROMPT 2: She sat alone in the cafe.
+────────────────────────────────────────────────────────────────────────────────
+
+  BASE MODEL OUTPUT:
+  The young man with a big nose and bright green eyes was sitting next to her.
+"Would you like something? I'm here," he said, smiling at her brightly.
+The girl looked up from where she had been staring into space for so long that it felt as if all of time passed before she realized what he meant by his question. "No...I don't think I do."
+He smiled again but didn't push further on; instead he went back to reading one book after another while occasionally checking out other people's faces or hands through their glasses.
+It took some time until she decided to look him straight in the eye - which ended up being much easier than expected because there wasn’t anyone around who could see them both talking face-to
+
+  FINE-TUNED OUTPUT:
+  Her eyes were fixed on a painting of an empty road, with no cars or people anywhere to be seen.
+It was early evening and all the tables had been taken. The only sound came from her own breathing as she sipped at her tea. It tasted bitter but she didn forgettaste it that way.
+The room grew cold suddenly. She looked up to see snow falling gently outside through the window glass.
+A man walked past the open door; he wore black coat and gloves like a detective would. His face couldn't have been more than 20 years old, his hair cut short almost bald.
+"Hello there," said someone beside her. "I'm new here."
+For some reason, this made her jump out of her skin
+
+  METRICS COMPARISON:
+    Metric                            Base   Fine-tuned
+    -------------------------------------------------
+    Perplexity                        9.02         8.26
+    BLEU Score                      0.0000       0.0000
+    Avg Sentence Length               16.6         11.5
+    Vocab Diversity                90.84%      84.92%
+
+
+================================================================================
+  SUMMARY — AVERAGE METRICS
+================================================================================
+
+    Metric                            Base   Fine-tuned
+    -------------------------------------------------
+    Perplexity                        7.95         5.85
+    BLEU Score                      0.0000       0.0001
+    Avg Sentence Length               14.6         10.9
+    Vocab Diversity                89.86%      80.06%
+
+
+  Report generated by MyStyle Writer evaluation pipeline.
